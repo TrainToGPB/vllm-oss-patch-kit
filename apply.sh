@@ -11,6 +11,9 @@ set -e
 #   ./apply.sh                          # 현재 활성화된 virtualenv에 적용
 #   ./apply.sh /path/to/venv            # 지정된 virtualenv에 적용
 #   ./apply.sh /path/to/venv --install  # venv 생성 + vllm 설치 + 패치
+#
+# Environment variables:
+#   UV_PIP=1    uv pip 사용 (pip 대신 uv pip으로 설치, 더 빠름)
 # ============================================================
 
 EXPECTED_VLLM="0.15.0"
@@ -47,7 +50,11 @@ done
 if [ -n "$VENV_DIR" ]; then
     if [ "$DO_INSTALL" = true ] && [ ! -d "$VENV_DIR" ]; then
         log "Creating virtualenv at $VENV_DIR ..."
-        python3 -m venv "$VENV_DIR"
+        if [ "${UV_PIP:-0}" = "1" ]; then
+            uv venv "$VENV_DIR"
+        else
+            python3 -m venv "$VENV_DIR"
+        fi
     fi
 
     if [ ! -f "$VENV_DIR/bin/activate" ]; then
@@ -65,7 +72,12 @@ else
 fi
 
 PYTHON="$(which python3 || which python)"
-PIP="$PYTHON -m pip"
+if [ "${UV_PIP:-0}" = "1" ]; then
+    PIP="uv pip"
+    log "Using uv pip (UV_PIP=1)"
+else
+    PIP="$PYTHON -m pip"
+fi
 
 # ----------------------------------------------------------
 # 2. Check / install vLLM version
@@ -80,7 +92,9 @@ except ImportError:
 if [ "$CURRENT_VLLM" = "NOT_INSTALLED" ]; then
     if [ "$DO_INSTALL" = true ]; then
         log "vLLM not found. Installing vllm==$EXPECTED_VLLM ..."
-        $PIP install --upgrade pip -q
+        if [ "${UV_PIP:-0}" != "1" ]; then
+            $PIP install --upgrade pip -q
+        fi
         $PIP install "vllm==$EXPECTED_VLLM" -q
         log "Installed vllm==$EXPECTED_VLLM"
     else
@@ -92,7 +106,11 @@ elif [ "$CURRENT_VLLM" != "$EXPECTED_VLLM" ]; then
 
     if [ "$DO_INSTALL" = true ]; then
         log "Reinstalling vllm==$EXPECTED_VLLM ..."
-        $PIP install "vllm==$EXPECTED_VLLM" --force-reinstall -q
+        if [ "${UV_PIP:-0}" = "1" ]; then
+            $PIP install "vllm==$EXPECTED_VLLM" --reinstall -q
+        else
+            $PIP install "vllm==$EXPECTED_VLLM" --force-reinstall -q
+        fi
         log "Reinstalled vllm==$EXPECTED_VLLM"
     else
         err "Run with --install to auto-reinstall, or fix manually."

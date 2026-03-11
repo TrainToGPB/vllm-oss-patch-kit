@@ -50,17 +50,16 @@ vllm-oss-patch-kit/
 source /path/to/venv/bin/activate
 
 vllm serve openai/gpt-oss-120b \
-    --tensor-parallel-size 2 \
-    --max-model-len 131072 \
-    --max-cudagraph-capture 2048 \
-    --max-num-batched-tokens 1024 \
-    --max-num-seqs 16 \
-    --gpu-memory-utilization 0.90 \
-    --stream-interval 1 \
-    --chat-template /path/to/vllm-oss-patch-kit/templates/chat_template.jinja \
-    --enable-auto-tool-choice \
-    --tool-call-parser openai \
-    --port 20009
+	--tensor-parallel-size 2 \
+	--async-scheduling \
+	--enable-prefix-caching \
+	--max-cudagraph-capture 2048 \
+	--max-num-batched-tokens 8192 \
+	--stream-interval 20 \
+	--chat-template '/data/users/shkim/vllm/scripts/chat_template.jinja' \
+	--enable-auto-tool-choice \
+	--tool-call-parser openai \
+	--port 20009
 ```
 
 ## 프로파일러

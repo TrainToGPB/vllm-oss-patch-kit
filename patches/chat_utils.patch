@@ -1,0 +1,23 @@
+--- a/vllm/entrypoints/chat_utils.py	2026-02-02 05:45:13.370453533 +0000
++++ /data/users/shkim/vllm/b/vllm/entrypoints/chat_utils.py	2026-02-11 01:31:40.638405583 +0000
+@@ -1505,7 +1505,9 @@
+ ) -> list[ConversationMessage]:
+     role = message["role"]
+     content = message.get("content")
+-    reasoning = message.get("reasoning") or message.get("reasoning_content")
++    reasoning = (message.get("reasoning")
++                 or message.get("reasoning_content")
++                 or message.get("thinking"))
+ 
+     if content is None:
+         content = []
+@@ -1534,6 +1536,9 @@
+                 result_msg["reasoning_content"] = cast(
+                     str, reasoning
+                 )  # keep compatibility
++                # Map to 'thinking' for harmony chat templates that
++                # check message.thinking for analysis channel rendering.
++                result_msg["thinking"] = cast(str, reasoning)
+         elif role == "tool":
+             parsed_msg = _ToolParser(message)
+             if "tool_call_id" in parsed_msg:

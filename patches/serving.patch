@@ -1,0 +1,73 @@
+--- a/vllm/entrypoints/openai/chat_completion/serving.py	2026-02-02 05:45:13.374453520 +0000
++++ /data/users/shkim/vllm/b/vllm/entrypoints/openai/chat_completion/serving.py	2026-02-11 06:32:07.876304986 +0000
+@@ -56,6 +56,7 @@
+ )
+ from vllm.entrypoints.openai.models.serving import OpenAIServingModels
+ from vllm.entrypoints.openai.parser.harmony_utils import (
++    _ANALYSIS_CHANNEL_PREFIX,
+     get_developer_message,
+     get_stop_tokens_for_assistant_actions,
+     get_streamable_parser_for_assistant,
+@@ -149,6 +150,11 @@
+             self.tool_call_id_type = "random"
+ 
+         self.use_harmony = self.model_config.hf_config.model_type == "gpt_oss"
++        # When --chat-template is provided, use Jinja2 for rendering input
++        # but keep Harmony for output parsing (reasoning, tool calls, etc.)
++        self.use_harmony_for_rendering = (
++            self.use_harmony and self.chat_template is None
++        )
+         if self.use_harmony:
+             if "stop_token_ids" not in self.default_sampling_params:
+                 self.default_sampling_params["stop_token_ids"] = []
+@@ -285,8 +291,8 @@
+             else:
+                 tool_dicts = [tool.model_dump() for tool in request.tools]
+ 
+-            if not self.use_harmony:
+-                # Common case.
++            if not self.use_harmony_for_rendering:
++                # Common case, or GPT-OSS with --chat-template override.
+                 error_check_ret = self._validate_chat_template(
+                     request_chat_template=request.chat_template,
+                     chat_template_kwargs=request.chat_template_kwargs,
+@@ -314,7 +320,7 @@
+                     add_special_tokens=request.add_special_tokens,
+                 )
+             else:
+-                # For GPT-OSS.
++                # For GPT-OSS without --chat-template.
+                 should_include_tools = tool_dicts is not None
+                 conversation, engine_prompts = self._make_request_with_harmony(
+                     request, should_include_tools
+@@ -646,9 +652,17 @@
+         num_prompt_tokens = 0
+         num_cached_tokens = None
+         if self.use_harmony:
+-            harmony_parsers = [
+-                get_streamable_parser_for_assistant() for _ in range(num_choices)
+-            ]
++            harmony_parsers = []
++            for _ in range(num_choices):
++                parser = get_streamable_parser_for_assistant()
++                # When using Jinja2 template (not Harmony renderer), the prompt
++                # already includes <|channel|>analysis<|message|>, so the model
++                # output won't start with these tokens. Pre-feed the prefix so
++                # the parser recognizes the initial thinking content.
++                if not self.use_harmony_for_rendering:
++                    for token_id in _ANALYSIS_CHANNEL_PREFIX:
++                        parser.process(token_id)
++                harmony_parsers.append(parser)
+             harmony_tools_streamed = [False] * num_choices
+         tools_streamed = [False] * num_choices
+ 
+@@ -1227,7 +1241,8 @@
+                             index = 0
+ 
+                         if (
+-                            self._should_check_for_unstreamed_tool_arg_tokens(
++                            auto_tools_called
++                            and self._should_check_for_unstreamed_tool_arg_tokens(
+                                 delta_message, output
+                             )
+                             and tool_parser
